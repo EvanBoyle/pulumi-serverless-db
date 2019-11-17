@@ -1,6 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
-import * as gcp from "@pulumi/gcp"
 import * as awsx from "@pulumi/awsx";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 
@@ -12,15 +11,6 @@ const shards: { [key: string]: number } = config.requireObject("shards");
 
 const dataWarehouseBucket = new aws.s3.Bucket("serverless-db-bucket");
 const athenaResultsBucket = new aws.s3.Bucket("athena-results");
-
-const adb = new gcp.sql.DatabaseInstance('app-db', {
-    databaseVersion: 'POSTGRES_11',
-    region: 'us-central1',
-    settings: {
-      tier: 'db-f1-micro',
-      diskType: 'PD_HDD',
-    },
-  });
 
 const db = new aws.glue.CatalogDatabase("severless-db", {
     name: "serverlessdb"
