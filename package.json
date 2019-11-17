@@ -16,6 +16,7 @@
     "aws-sdk": "^2.569.0"
   },
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "test-watch": "jest --watch"
   }
 }
