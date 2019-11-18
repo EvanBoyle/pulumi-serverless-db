@@ -18,7 +18,7 @@ const db = new aws.glue.CatalogDatabase("severless-db", {
     name: "serverlessdb"
 });
 
-const location = dataWarehouseBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
+const location = dataWarehouseBucket.arn.apply(a => `s3://${a.split(":::")[1]}`);
 
 const table = new aws.glue.CatalogTable("logs", {
     name: "logs",
@@ -29,13 +29,17 @@ const table = new aws.glue.CatalogTable("logs", {
         inputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
         outputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
         serDeInfo: {
-            parameters: {"serialization.format": "1"},
+            parameters: { "serialization.format": "1" },
             name: "ParquetHiveSerDe",
             serializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
         },
         columns: [
             {
                 name: "id",
+                type: "string"
+            },
+            {
+                name: "session_id",
                 type: "string"
             },
             {
@@ -96,7 +100,7 @@ const gluePolicy = {
             "Action": [
                 "glue:*",
             ],
-            "Resource": "*"   
+            "Resource": "*"
         }
     ]
 };
@@ -126,7 +130,7 @@ const parquetDeliveryStream = new aws.kinesis.FirehoseDeliveryStream("parquet-de
         bucketArn: dataWarehouseBucket.arn,
         bufferInterval: 60,
         bufferSize: 64,
-        roleArn: role.arn, 
+        roleArn: role.arn,
         dataFormatConversionConfiguration: {
             inputFormatConfiguration: {
                 deserializer: {
@@ -147,7 +151,6 @@ const parquetDeliveryStream = new aws.kinesis.FirehoseDeliveryStream("parquet-de
     }
 });
 
-//export const deliveryStreamArn = parquetDeliveryStream.arn;
 export const streamName = kinesis.name;
 const resultsBucket = athenaResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
 
@@ -165,17 +168,17 @@ let lambdaAssumeRolePolicy = {
     ],
 };
 
-const eventRole = new aws.iam.Role("eventGenLambdaRole", {
+const partitionRole = new aws.iam.Role("partitionLambdaRole", {
     assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy)
 });
 
-const eventGenLambdaAccess = new aws.iam.RolePolicyAttachment("event-gen-lambda-access", {
-    role: eventRole,
+const partitionGenLambdaAccess = new aws.iam.RolePolicyAttachment("partition-lambda-access", {
+    role: partitionRole,
     policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess
 });
 
-const eventGenAthenaAccess = new aws.iam.RolePolicyAttachment("event-gen-athena-access", {
-    role: eventRole,
+const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment("partition-athena-access", {
+    role: partitionRole,
     policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
 });
 
@@ -183,8 +186,8 @@ const cron = new aws.cloudwatch.EventRule("hourly-cron", {
     scheduleExpression: "rate(1 hour)"
 });
 
-cron.onEvent("partition-registrar", new CallbackFunction('event-gen-callback', {
-    role: eventRole,
+cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
+    role: partitionRole,
     callback: (event: EventRuleEvent) => {
         // create an athena client here, write the 
         const athena = require("athena-client");
@@ -208,4 +211,56 @@ cron.onEvent("partition-registrar", new CallbackFunction('event-gen-callback', {
             }
         })
     }
+}));
+
+const eventGenRole = new aws.iam.Role("eventGenLambdaRole", {
+    assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy),
+});
+
+const eventGenLambdaAccess = new aws.iam.RolePolicyAttachment("event-gen-lambda-access", {
+    role: eventGenRole,
+    policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess,
+});
+
+const eventGenKinesisAccess = new aws.iam.RolePolicyAttachment("event-gen-kinesis-access", {
+    role: eventGenRole,
+    policyArn: aws.iam.ManagedPolicies.AmazonKinesisFullAccess,
+});
+
+
+const eventCron = new aws.cloudwatch.EventRule("event-gen-cron", {
+    scheduleExpression: "rate(1 minute)",
+});
+
+eventCron.onEvent("event-generator", new CallbackFunction('event-gen-callback', {
+    role: eventGenRole,
+    callback: (event: EventRuleEvent) => {
+        const AWS = require("aws-sdk");
+        const uuid = require("uuid/v4")
+        const kinesis = new AWS.Kinesis();
+        const records: any = [];
+
+        const sessionId = uuid();
+        const eventId = uuid();
+        const record = {
+            Data: JSON.stringify({
+                id: eventId,
+                session_id: sessionId,
+                message: "this is a message",
+                event_type: "impression",
+            }),
+            PartitionKey: sessionId
+        };
+        records.push(record);
+
+        kinesis.putRecords({
+            Records: records,
+            StreamName: streamName.get()
+        }, (err: any) => {
+            if (err) {
+                console.error(err)
+            }
+        });
+    }
+
 }));
