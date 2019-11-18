@@ -2,6 +2,8 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
+import * as moment from "moment-timezone";
+import { CallbackFunction } from "@pulumi/aws/lambda";
 
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")
@@ -147,30 +149,63 @@ const parquetDeliveryStream = new aws.kinesis.FirehoseDeliveryStream("parquet-de
 
 //export const deliveryStreamArn = parquetDeliveryStream.arn;
 export const streamName = kinesis.name;
+const resultsBucket = athenaResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
 
+let lambdaAssumeRolePolicy = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": "sts:AssumeRole",
+            "Principal": {
+                "Service": "lambda.amazonaws.com",
+            },
+            "Effect": "Allow",
+            "Sid": "",
+        },
+    ],
+};
 
-// TODO - register the partitions after we can reliabily write events into the kinesis stream
-// and use athena from the consolee
+const eventRole = new aws.iam.Role("eventGenLambdaRole", {
+    assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy)
+});
 
-// const cron = new aws.cloudwatch.EventRule("hourly-cron", {
-//     scheduleExpression: "rate(1 hour)"
-// });
+const eventGenLambdaAccess = new aws.iam.RolePolicyAttachment("event-gen-lambda-access", {
+    role: eventRole,
+    policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess
+});
 
-// cron.onEvent("partition-registrar", (event: EventRuleEvent) => {
-//     // create an athena client here, write the 
-//     const athena = require("athena-client");
-//     const clientConfig = {
-//         bucketUri: `s3://${athenaResultsBucket.arn.apply((arn => arn.split(':::')[1]))}`
-//     };
-//     const awsConfig = {
-//         region: region
-//     };
+const eventGenAthenaAccess = new aws.iam.RolePolicyAttachment("event-gen-athena-access", {
+    role: eventRole,
+    policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
+});
 
-//     const client = athena.createClient(clientConfig, awsConfig);
+const cron = new aws.cloudwatch.EventRule("hourly-cron", {
+    scheduleExpression: "rate(1 hour)"
+});
 
-//     client.execute('TODO QUERY', (err: Error) => {
-//         if (err) {
-//             throw err;
-//         }
-//     })
-// });
+cron.onEvent("partition-registrar", new CallbackFunction('event-gen-callback', {
+    role: eventRole,
+    callback: (event: EventRuleEvent) => {
+        // create an athena client here, write the 
+        const athena = require("athena-client");
+        const clientConfig = {
+            bucketUri: resultsBucket.get()
+        };
+        const awsConfig = {
+            region: region
+        };
+    
+        const client = athena.createClient(clientConfig, awsConfig);
+    
+        const date = moment(event.time).utc().format("YYYY/MM/DD/HH");
+    
+        const query = `ALTER TABLE ${db.name.get()}.logs add
+        PARTITION (inserted_at = '${date}') LOCATION '${location.get()}/${date}/';`;
+    
+        client.execute(query, (err: Error) => {
+            if (err) {
+                throw err;
+            }
+        })
+    }
+}));
