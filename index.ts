@@ -179,9 +179,6 @@ const eventGenAthenaAccess = new aws.iam.RolePolicyAttachment("event-gen-athena-
     policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
 });
 
-// TODO - register the partitions after we can reliabily write events into the kinesis stream
-// and use athena from the consolee
-
 const cron = new aws.cloudwatch.EventRule("hourly-cron", {
     scheduleExpression: "rate(1 hour)"
 });
