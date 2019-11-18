@@ -232,7 +232,7 @@ const eventCron = new aws.cloudwatch.EventRule("event-gen-cron", {
     scheduleExpression: "rate(1 minute)",
 });
 
-cron.onEvent("event-generator", new CallbackFunction('event-gen-callback', {
+eventCron.onEvent("event-generator", new CallbackFunction('event-gen-callback', {
     role: eventGenRole,
     callback: (event: EventRuleEvent) => {
         const AWS = require("aws-sdk");
