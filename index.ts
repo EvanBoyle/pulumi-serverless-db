@@ -182,8 +182,12 @@ const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment("partition-ath
     policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
 });
 
+// const cron = new aws.cloudwatch.EventRule("hourly-cron", {
+//     scheduleExpression: "rate(1 hour)"
+// });
+
 const cron = new aws.cloudwatch.EventRule("hourly-cron", {
-    scheduleExpression: "rate(1 hour)"
+    scheduleExpression: "rate(1 minute)"
 });
 
 cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
@@ -200,16 +204,22 @@ cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
     
         const client = athena.createClient(clientConfig, awsConfig);
     
-        const date = moment(event.time).utc().format("YYYY/MM/DD/HH");
+        let date = moment(event.time);
+        
+        for(let i = 0; i <= 12; i++) {
+            const dateString = date.utc().format("YYYY/MM/DD/HH");
+
+            const query = `ALTER TABLE ${db.name.get()}.logs ADD IF NOT EXISTS
+            PARTITION (inserted_at = '${dateString}') LOCATION '${location.get()}/${dateString}/';`;
     
-        const query = `ALTER TABLE ${db.name.get()}.logs add
-        PARTITION (inserted_at = '${date}') LOCATION '${location.get()}/${date}/';`;
-    
-        client.execute(query, (err: Error) => {
-            if (err) {
-                throw err;
-            }
-        })
+            client.execute(query, (err: Error) => {
+                if (err) {
+                    throw err;
+                }
+            })
+
+            date.add(1, 'h');
+        }
     }
 }));
 

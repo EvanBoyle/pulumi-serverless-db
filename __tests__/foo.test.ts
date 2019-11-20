@@ -6,7 +6,7 @@ test("foo", ()=>{
 });
 
 test("date", ()=>{
-    expect(date()).toEqual('2017/01/01/00');
+    expect(date()).toEqual('2017/01/01/01');
 });
 
 // test("dateYear", ()=>{
