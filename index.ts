@@ -188,7 +188,7 @@ const cronUnit = isDev ? "minute" : "hour";
 const scheduleExpression  = `rate(1 ${cronUnit})`;
 
 const cron = new aws.cloudwatch.EventRule("hourly-cron", {
-    scheduleExpression: scheduleExpression
+    scheduleExpression
 });
 
 cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
