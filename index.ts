@@ -4,6 +4,7 @@ import * as awsx from "@pulumi/awsx";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 import * as moment from "moment-timezone";
 import { CallbackFunction } from "@pulumi/aws/lambda";
+import { createPartitionDDLStatement } from "./athena/partitionHelper";
 
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")
@@ -182,8 +183,12 @@ const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment("partition-ath
     policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
 });
 
+const isDev = config.get("dev");
+const cronUnit = isDev ? "minute" : "hour";
+const scheduleExpression  = `rate(1 ${cronUnit})`;
+
 const cron = new aws.cloudwatch.EventRule("hourly-cron", {
-    scheduleExpression: "rate(1 hour)"
+    scheduleExpression
 });
 
 cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
@@ -200,11 +205,8 @@ cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
     
         const client = athena.createClient(clientConfig, awsConfig);
     
-        const date = moment(event.time).utc().format("YYYY/MM/DD/HH");
-    
-        const query = `ALTER TABLE ${db.name.get()}.logs add
-        PARTITION (inserted_at = '${date}') LOCATION '${location.get()}/${date}/';`;
-    
+        const query = createPartitionDDLStatement(db.name.get(), location.get(), event.time);
+
         client.execute(query, (err: Error) => {
             if (err) {
                 throw err;
