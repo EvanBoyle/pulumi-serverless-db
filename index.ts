@@ -5,6 +5,9 @@ import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 import * as moment from "moment-timezone";
 import { CallbackFunction } from "@pulumi/aws/lambda";
 import { createPartitionDDLStatement } from "./athena/partitionHelper";
+import { AwsServerlessDataWarehouse, DataWarehouseArgs } from "./serverless/datawarehouse"
+import { AwsServerlessDataPipeline, DataPipelineArgs } from "./serverless/pipeline"
+import { getS3Location } from "./utils"
 
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")
@@ -12,148 +15,46 @@ const region = awsConfig.require("region");
 const stage = config.require("stage");
 const shards: { [key: string]: number } = config.requireObject("shards");
 
-const dataWarehouseBucket = new aws.s3.Bucket("serverless-db-bucket");
-const athenaResultsBucket = new aws.s3.Bucket("athena-results");
 
-const db = new aws.glue.CatalogDatabase("severless-db", {
-    name: "serverlessdb"
-});
-
-const location = dataWarehouseBucket.arn.apply(a => `s3://${a.split(":::")[1]}`);
-
-const table = new aws.glue.CatalogTable("logs", {
-    name: "logs",
-    databaseName: db.name,
-    tableType: "EXTERNAL_TABLE",
-    storageDescriptor: {
-        location,
-        inputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
-        outputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
-        serDeInfo: {
-            parameters: { "serialization.format": "1" },
-            name: "ParquetHiveSerDe",
-            serializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
-        },
-        columns: [
-            {
-                name: "id",
-                type: "string"
-            },
-            {
-                name: "session_id",
-                type: "string"
-            },
-            {
-                name: "message",
-                type: "string"
-            },
-            {
-                name: "event_type",
-                type: "string"
-            }
-        ]
+const columns = [
+    {
+        name: "id",
+        type: "string"
     },
-    partitionKeys: [
-        {
-            name: "inserted_at",
-            type: "string"
-        }
-    ]
-});
-
-const kinesis = new aws.kinesis.Stream("incoming-events", {
-    shardCount: shards[stage],
-});
-
-let assumeRolePolicy = {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": "sts:AssumeRole",
-            "Principal": {
-                "Service": "firehose.amazonaws.com",
-            },
-            "Effect": "Allow",
-            "Sid": "",
-        },
-    ],
-};
-
-const role = new aws.iam.Role("firehoseRose", {
-    assumeRolePolicy: JSON.stringify(assumeRolePolicy),
-});
-
-let kinesisAccess = new aws.iam.RolePolicyAttachment("kinesis-access", {
-    role,
-    policyArn: aws.iam.ManagedPolicies.AmazonKinesisFullAccess,
-});
-
-let s3Access = new aws.iam.RolePolicyAttachment("s3-access", {
-    role,
-    policyArn: aws.iam.ManagedPolicies.AmazonS3FullAccess,
-});
-
-const gluePolicy = {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "glue:*",
-            ],
-            "Resource": "*"
-        }
-    ]
-};
-
-let glueAccess = new aws.iam.RolePolicy("glue-policy", { role: role, policy: JSON.stringify(gluePolicy) });
-
-let logGroup = new aws.cloudwatch.LogGroup("/aws/firehose/parquet-stream", {
-    retentionInDays: 7,
-});
-
-let logStream = new aws.cloudwatch.LogStream("serverless-db-s3-delivery", {
-    logGroupName: logGroup.name
-});
-
-const parquetDeliveryStream = new aws.kinesis.FirehoseDeliveryStream("parquet-delivery-stream", {
-    kinesisSourceConfiguration: {
-        kinesisStreamArn: kinesis.arn,
-        roleArn: role.arn
+    {
+        name: "session_id",
+        type: "string"
     },
-    destination: "extended_s3", // wish there was intellisense on these values. 
-    extendedS3Configuration: {
-        cloudwatchLoggingOptions: {
-            logGroupName: logGroup.name,
-            enabled: true,
-            logStreamName: logStream.name,
-        },
-        bucketArn: dataWarehouseBucket.arn,
-        bufferInterval: 60,
-        bufferSize: 64,
-        roleArn: role.arn,
-        dataFormatConversionConfiguration: {
-            inputFormatConfiguration: {
-                deserializer: {
-                    openXJsonSerDe: {}
-                }
-            },
-            outputFormatConfiguration: {
-                serializer: {
-                    parquetSerDe: {}
-                }
-            },
-            schemaConfiguration: {
-                databaseName: db.name,
-                tableName: table.name,
-                roleArn: role.arn
-            }
-        }
+    {
+        name: "message",
+        type: "string"
+    },
+    {
+        name: "event_type",
+        type: "string"
     }
-});
+];
 
-export const streamName = kinesis.name;
-const resultsBucket = athenaResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
+const dwArgs: DataWarehouseArgs = {
+    columns,
+    tableName: "logs"
+};
+
+const {dataWarehouseBucket, queryResultsBucket, database, table}  = new AwsServerlessDataWarehouse("analytics_dw", dwArgs);
+
+const location = getS3Location(dataWarehouseBucket);
+
+const dpArgs: DataPipelineArgs = {
+    destinationBucket: dataWarehouseBucket,
+    shardCount: shards[stage],
+    databaseName: database.name,
+    tableName: table.name
+};
+
+const {inputStream} = new AwsServerlessDataPipeline("pipeline", dpArgs);
+
+export const streamName = inputStream.name;
+const resultsBucket = queryResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
 
 let lambdaAssumeRolePolicy = {
     "Version": "2012-10-17",
@@ -205,7 +106,7 @@ cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
     
         const client = athena.createClient(clientConfig, awsConfig);
     
-        const query = createPartitionDDLStatement(db.name.get(), location.get(), event.time);
+        const query = createPartitionDDLStatement(database.name.get(), location.get(), event.time);
 
         client.execute(query, (err: Error) => {
             if (err) {
