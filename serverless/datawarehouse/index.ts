@@ -1,6 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { input } from "@pulumi/aws/types/index";
+import { getS3Location } from "../../utils";
 
 export class AwsServerlessDataWarehouse extends pulumi.ComponentResource {
 
@@ -23,7 +24,7 @@ export class AwsServerlessDataWarehouse extends pulumi.ComponentResource {
         const dataWarehouseBucket = new aws.s3.Bucket("datawarehouse-bucket");
         const queryResultsBucket = new aws.s3.Bucket("query-results-bucket");
 
-        const location = dataWarehouseBucket.arn.apply(a => `s3://${a.split(":::")[1]}`);
+        const location = getS3Location(dataWarehouseBucket);
         const database = new aws.glue.CatalogDatabase("severless-db", {
             name: "serverlessdb" // todo - add randomness here. 
         });

@@ -7,6 +7,7 @@ import { CallbackFunction } from "@pulumi/aws/lambda";
 import { createPartitionDDLStatement } from "./athena/partitionHelper";
 import { AwsServerlessDataWarehouse, DataWarehouseArgs } from "./serverless/datawarehouse"
 import { AwsServerlessDataPipeline, DataPipelineArgs } from "./serverless/pipeline"
+import { getS3Location } from "./utils"
 
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")
@@ -39,10 +40,9 @@ const dwArgs: DataWarehouseArgs = {
     tableName: "logs"
 };
 
-const dw = new AwsServerlessDataWarehouse("analytics_dw", dwArgs);
-const {dataWarehouseBucket, queryResultsBucket, database, table} = dw;
+const {dataWarehouseBucket, queryResultsBucket, database, table}  = new AwsServerlessDataWarehouse("analytics_dw", dwArgs);
 
-const location = dataWarehouseBucket.arn.apply(a => `s3://${a.split(":::")[1]}`);
+const location = getS3Location(dataWarehouseBucket);
 
 const dpArgs: DataPipelineArgs = {
     destinationBucket: dataWarehouseBucket,
@@ -51,9 +51,7 @@ const dpArgs: DataPipelineArgs = {
     tableName: table.name
 };
 
-const pipeline = new AwsServerlessDataPipeline("pipeline", dpArgs);
-const {inputStream} = pipeline;
-
+const {inputStream} = new AwsServerlessDataPipeline("pipeline", dpArgs);
 
 export const streamName = inputStream.name;
 const resultsBucket = queryResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
