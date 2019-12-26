@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
-import { input } from "@pulumi/aws/types/index";
-import { getS3Location } from "../../utils";
+import { input } from "@pulumi/aws/types";
+import { getS3Location } from "../../../utils";
 
 export class AwsServerlessDataWarehouse extends pulumi.ComponentResource {
 

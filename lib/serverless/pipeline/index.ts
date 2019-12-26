@@ -1,6 +1,6 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
-import { input } from "@pulumi/aws/types/index";
+import { input } from "@pulumi/aws/types";
 import { DataPipeline } from "aws-sdk";
 
 export class AwsServerlessDataPipeline extends pulumi.ComponentResource {
