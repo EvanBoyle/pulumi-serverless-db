@@ -4,10 +4,10 @@ import * as awsx from "@pulumi/awsx";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 import * as moment from "moment-timezone";
 import { CallbackFunction } from "@pulumi/aws/lambda";
-import { createPartitionDDLStatement } from "./athena/partitionHelper";
-import { AwsServerlessDataWarehouse, DataWarehouseArgs } from "./serverless/datawarehouse"
-import { AwsServerlessDataPipeline, DataPipelineArgs } from "./serverless/pipeline"
-import { getS3Location } from "./utils"
+import { createPartitionDDLStatement } from "../../lib/athena/partitionHelper";
+import { AwsServerlessDataWarehouse, DataWarehouseArgs } from "../../lib/serverless/datawarehouse"
+import { AwsServerlessDataPipeline, DataPipelineArgs } from "../../lib/serverless/pipeline"
+import { getS3Location } from "../../utils"
 
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")

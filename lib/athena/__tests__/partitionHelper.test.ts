@@ -1,4 +1,4 @@
-import { createPartitionDDLStatement } from "../athena/partitionHelper";
+import { createPartitionDDLStatement } from "../partitionHelper";
 
 test("createPartitionDDLStatement", ()=>{
     expect(createPartitionDDLStatement("someName","somePath","2017-01-01T00:15:48Z")).toEqual(`ALTER TABLE someName.logs ADD IF NOT EXISTS
