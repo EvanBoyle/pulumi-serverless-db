@@ -5,17 +5,18 @@ import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 import * as moment from "moment-timezone";
 import { CallbackFunction } from "@pulumi/aws/lambda";
 import { createPartitionDDLStatement } from "../../lib/athena/partitionHelper";
-import { AwsServerlessDataWarehouse, DataWarehouseArgs } from "../../lib/serverless/datawarehouse"
-import { AwsServerlessDataPipeline, DataPipelineArgs } from "../../lib/serverless/pipeline"
-import { getS3Location } from "../../utils"
+import { getS3Location } from "../../utils";
+import { ServerlessDataWarehouse, StreamingInputTableArgs } from "../../lib/datawarehouse";
 
+
+// app specific config
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")
 const region = awsConfig.require("region");
 const stage = config.require("stage");
 const shards: { [key: string]: number } = config.requireObject("shards");
 
-
+// create the table, s3 bucket, etc
 const columns = [
     {
         name: "id",
@@ -35,25 +36,22 @@ const columns = [
     }
 ];
 
-const dwArgs: DataWarehouseArgs = {
+const logsTableName = "logs";
+const logsTableArgs: StreamingInputTableArgs = {
     columns,
-    tableName: "logs"
-};
+    inputStreamShardCount: shards[stage]
+}
 
-const {dataWarehouseBucket, queryResultsBucket, database, table}  = new AwsServerlessDataWarehouse("analytics_dw", dwArgs);
+const dataWarehouse = new ServerlessDataWarehouse("analytics_dw")
+    .withStreamingInputTable(logsTableName, logsTableArgs);
+
+const { dataWarehouseBucket, queryResultsBucket, database } = dataWarehouse;
+const logsInputStream = dataWarehouse.getInputStream(logsTableName);
 
 const location = getS3Location(dataWarehouseBucket);
 
-const dpArgs: DataPipelineArgs = {
-    destinationBucket: dataWarehouseBucket,
-    shardCount: shards[stage],
-    databaseName: database.name,
-    tableName: table.name
-};
-
-const {inputStream} = new AwsServerlessDataPipeline("pipeline", dpArgs);
-
-export const streamName = inputStream.name;
+// register partitions
+export const streamName = logsInputStream.name;
 const resultsBucket = queryResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
 
 let lambdaAssumeRolePolicy = {
@@ -116,6 +114,7 @@ cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
     }
 }));
 
+// generate test events
 const eventGenRole = new aws.iam.Role("eventGenLambdaRole", {
     assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy),
 });

@@ -3,16 +3,14 @@ import * as aws from "@pulumi/aws";
 import { input } from "@pulumi/aws/types";
 import { DataPipeline } from "aws-sdk";
 
-export class AwsServerlessDataPipeline extends pulumi.ComponentResource {
+export class InputStream extends pulumi.ComponentResource {
 
     public inputStream: aws.kinesis.Stream;
     
-    constructor(name: string, args: DataPipelineArgs) {
-        super("serverless:dataPipeline", name, {});
-
-        this.validateArgs(args);
+    constructor(name: string, args: InputStreamArgs, opts?: pulumi.ComponentResourceOptions) {
+        super("serverless:inputstream", name, opts);
         
-        const kinesis = new aws.kinesis.Stream("incoming-events", {
+        const kinesis = new aws.kinesis.Stream("input-stream", {
             shardCount: args.shardCount,
         });
         
@@ -107,19 +105,13 @@ export class AwsServerlessDataPipeline extends pulumi.ComponentResource {
             inputStream: kinesis
         })
     }
-
-    private validateArgs(args: DataPipelineArgs) {
-        // TODO implement
-        const valid = true; 
-        if(!valid) {
-            throw new Error("Failed to validate 'DataWarehouseArgs.");
-        }
-    }
 }
 
-export interface DataPipelineArgs {
+export interface InputStreamArgs {
     databaseName: pulumi.Input<string>;
     tableName: pulumi.Input<string>;
     destinationBucket: aws.s3.Bucket;
     shardCount: number;
+    // buffering hints
+    // logging config
 }
