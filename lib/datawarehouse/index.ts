@@ -114,6 +114,7 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
         return stream;
     }
 
+    // TODO: support formats other than parquet
     private createTable(name: string, columns: input.glue.CatalogTableStorageDescriptorColumn[], partitionKeys?: input.glue.CatalogTablePartitionKey[]): aws.glue.CatalogTable {
         const location = getS3Location(this.dataWarehouseBucket, name);
         return new aws.glue.CatalogTable(name, {
