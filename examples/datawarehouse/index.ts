@@ -1,21 +1,19 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
-import * as awsx from "@pulumi/awsx";
-import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
-import * as moment from "moment-timezone";
-import { CallbackFunction } from "@pulumi/aws/lambda";
-import { createPartitionDDLStatement } from "../../lib/athena/partitionHelper";
-import { AwsServerlessDataWarehouse, DataWarehouseArgs } from "../../lib/serverless/datawarehouse"
-import { AwsServerlessDataPipeline, DataPipelineArgs } from "../../lib/serverless/pipeline"
-import { getS3Location } from "../../utils"
+import { ServerlessDataWarehouse, StreamingInputTableArgs } from "../../lib/datawarehouse";
+import { createEventGenerator } from "./eventGenerator";
 
+// app specific config
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws")
 const region = awsConfig.require("region");
 const stage = config.require("stage");
 const shards: { [key: string]: number } = config.requireObject("shards");
+const isDev = config.get("dev");
+const cronUnit = isDev ? "minute" : "hour";
+const scheduleExpression  = `rate(1 ${cronUnit})`;
 
-
+// dw w/ streaming input table
 const columns = [
     {
         name: "id",
@@ -35,135 +33,25 @@ const columns = [
     }
 ];
 
-const dwArgs: DataWarehouseArgs = {
+const impressionsTableName = "impressions";
+const clicksTableName = "clicks";
+
+const genericTableArgs: StreamingInputTableArgs = {
     columns,
-    tableName: "logs"
-};
-
-const {dataWarehouseBucket, queryResultsBucket, database, table}  = new AwsServerlessDataWarehouse("analytics_dw", dwArgs);
-
-const location = getS3Location(dataWarehouseBucket);
-
-const dpArgs: DataPipelineArgs = {
-    destinationBucket: dataWarehouseBucket,
-    shardCount: shards[stage],
-    databaseName: database.name,
-    tableName: table.name
-};
-
-const {inputStream} = new AwsServerlessDataPipeline("pipeline", dpArgs);
-
-export const streamName = inputStream.name;
-const resultsBucket = queryResultsBucket.arn.apply( a => `s3://${a.split(":::")[1]}`);
-
-let lambdaAssumeRolePolicy = {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": "sts:AssumeRole",
-            "Principal": {
-                "Service": "lambda.amazonaws.com",
-            },
-            "Effect": "Allow",
-            "Sid": "",
-        },
-    ],
-};
-
-const partitionRole = new aws.iam.Role("partitionLambdaRole", {
-    assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy)
-});
-
-const partitionGenLambdaAccess = new aws.iam.RolePolicyAttachment("partition-lambda-access", {
-    role: partitionRole,
-    policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess
-});
-
-const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment("partition-athena-access", {
-    role: partitionRole,
-    policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
-});
-
-const isDev = config.get("dev");
-const cronUnit = isDev ? "minute" : "hour";
-const scheduleExpression  = `rate(1 ${cronUnit})`;
-
-const cron = new aws.cloudwatch.EventRule("hourly-cron", {
+    inputStreamShardCount: shards[stage],
+    region,
     scheduleExpression
-});
+}
 
-cron.onEvent("partition-registrar", new CallbackFunction('partition-callback', {
-    role: partitionRole,
-    callback: (event: EventRuleEvent) => {
-        // create an athena client here, write the 
-        const athena = require("athena-client");
-        const clientConfig = {
-            bucketUri: resultsBucket.get()
-        };
-        const awsConfig = {
-            region: region
-        };
-    
-        const client = athena.createClient(clientConfig, awsConfig);
-    
-        const query = createPartitionDDLStatement(database.name.get(), location.get(), event.time);
+const dataWarehouse = new ServerlessDataWarehouse("analytics_dw")
+    .withStreamingInputTable(impressionsTableName, genericTableArgs)
+    .withStreamingInputTable(clicksTableName, genericTableArgs);
 
-        client.execute(query, (err: Error) => {
-            if (err) {
-                throw err;
-            }
-        })
-    }
-}));
+const impressionsInputStream = dataWarehouse.getInputStream(impressionsTableName);
+const clicksInputStream = dataWarehouse.getInputStream(clicksTableName);
 
-const eventGenRole = new aws.iam.Role("eventGenLambdaRole", {
-    assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy),
-});
+export const impressionInputStream = impressionsInputStream.name;
+export const clickInputStream = clicksInputStream.name;
 
-const eventGenLambdaAccess = new aws.iam.RolePolicyAttachment("event-gen-lambda-access", {
-    role: eventGenRole,
-    policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess,
-});
-
-const eventGenKinesisAccess = new aws.iam.RolePolicyAttachment("event-gen-kinesis-access", {
-    role: eventGenRole,
-    policyArn: aws.iam.ManagedPolicies.AmazonKinesisFullAccess,
-});
-
-
-const eventCron = new aws.cloudwatch.EventRule("event-gen-cron", {
-    scheduleExpression: "rate(1 minute)",
-});
-
-eventCron.onEvent("event-generator", new CallbackFunction('event-gen-callback', {
-    role: eventGenRole,
-    callback: (event: EventRuleEvent) => {
-        const AWS = require("aws-sdk");
-        const uuid = require("uuid/v4")
-        const kinesis = new AWS.Kinesis();
-        const records: any = [];
-
-        const sessionId = uuid();
-        const eventId = uuid();
-        const record = {
-            Data: JSON.stringify({
-                id: eventId,
-                session_id: sessionId,
-                message: "this is a message",
-                event_type: "impression",
-            }),
-            PartitionKey: sessionId
-        };
-        records.push(record);
-
-        kinesis.putRecords({
-            Records: records,
-            StreamName: streamName.get()
-        }, (err: any) => {
-            if (err) {
-                console.error(err)
-            }
-        });
-    }
-
-}));
+createEventGenerator("impression", impressionsInputStream.name);
+createEventGenerator("clicks", clicksInputStream.name);
