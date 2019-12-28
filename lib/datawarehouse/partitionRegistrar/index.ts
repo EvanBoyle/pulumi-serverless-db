@@ -30,27 +30,27 @@ export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
             ],
         };
 
-        const partitionRole = new aws.iam.Role("partitionLambdaRole", {
+        const partitionRole = new aws.iam.Role(`${table}-partitionLambdaRole`, {
             assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy)
         }, options);
 
-        const partitionGenLambdaAccess = new aws.iam.RolePolicyAttachment("partition-lambda-access", {
+        const partitionGenLambdaAccess = new aws.iam.RolePolicyAttachment(`${table}-partition-lambda-access`, {
             role: partitionRole,
             policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess
         }, options);
 
-        const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment("partition-athena-access", {
+        const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment(`${table}-partition-athena-access`, {
             role: partitionRole,
             policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
         }, options);
 
         const schedule = scheduleExpression ? scheduleExpression : `rate(1 hour)`;
 
-        const cron = new aws.cloudwatch.EventRule("hourly-cron", {
+        const cron = new aws.cloudwatch.EventRule(`${table}-hourly-cron`, {
             scheduleExpression: schedule
         }, options);
 
-        cron.onEvent(`${table}-partitionregistrar`, new CallbackFunction('partition-callback', {
+        cron.onEvent(`${table}-partitionregistrar`, new CallbackFunction(`${table}-partition-callback`, {
             role: partitionRole,
             callback: (event: EventRuleEvent) => {
                 // create an athena client here, write the 
@@ -64,7 +64,7 @@ export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
 
                 const client = athena.createClient(clientConfig, awsConfig);
 
-                const query = createPartitionDDLStatement(args.database.name.get(), location.get(), partitionKey, event.time);
+                const query = createPartitionDDLStatement(args.database.name.get(), table, location.get(), partitionKey, event.time);
 
                 client.execute(query, (err: Error) => {
                     if (err) {

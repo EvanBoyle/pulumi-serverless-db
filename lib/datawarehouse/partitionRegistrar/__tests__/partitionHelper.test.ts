@@ -1,7 +1,7 @@
 import { createPartitionDDLStatement } from "../partitionHelper";
 
 test("createPartitionDDLStatement", ()=>{
-    expect(createPartitionDDLStatement("someName","somePath", "inserted_at","2017-01-01T00:15:48Z")).toEqual(`ALTER TABLE someName.logs ADD IF NOT EXISTS
+    expect(createPartitionDDLStatement("someDatabase", "someTable","somePath", "inserted_at","2017-01-01T00:15:48Z")).toEqual(`ALTER TABLE someDatabase.someTable ADD IF NOT EXISTS
 PARTITION (inserted_at = '2017/01/01/00') LOCATION 'somePath/2017/01/01/00/'
 PARTITION (inserted_at = '2017/01/01/01') LOCATION 'somePath/2017/01/01/01/'
 PARTITION (inserted_at = '2017/01/01/02') LOCATION 'somePath/2017/01/01/02/'

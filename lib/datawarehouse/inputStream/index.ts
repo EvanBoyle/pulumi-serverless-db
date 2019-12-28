@@ -10,7 +10,7 @@ export class InputStream extends pulumi.ComponentResource {
     constructor(name: string, args: InputStreamArgs, opts?: pulumi.ComponentResourceOptions) {
         super("serverless:inputstream", name, opts);
         
-        const kinesis = new aws.kinesis.Stream("input-stream", {
+        const kinesis = new aws.kinesis.Stream(`${name}-input-stream`, {
             shardCount: args.shardCount,
         });
         
@@ -28,16 +28,16 @@ export class InputStream extends pulumi.ComponentResource {
             ],
         };
         
-        const role = new aws.iam.Role("firehoseRose", {
+        const role = new aws.iam.Role(`${name}-firehoseRose`, {
             assumeRolePolicy: JSON.stringify(assumeRolePolicy),
         });
         
-        let kinesisAccess = new aws.iam.RolePolicyAttachment("kinesis-access", {
+        let kinesisAccess = new aws.iam.RolePolicyAttachment(`${name}-kinesis-access`, {
             role,
             policyArn: aws.iam.ManagedPolicies.AmazonKinesisFullAccess,
         });
         
-        let s3Access = new aws.iam.RolePolicyAttachment("s3-access", {
+        let s3Access = new aws.iam.RolePolicyAttachment(`${name}-s3-access`, {
             role,
             policyArn: aws.iam.ManagedPolicies.AmazonS3FullAccess,
         });
@@ -55,17 +55,17 @@ export class InputStream extends pulumi.ComponentResource {
             ]
         };
         
-        let glueAccess = new aws.iam.RolePolicy("glue-policy", { role: role, policy: JSON.stringify(gluePolicy) });
+        let glueAccess = new aws.iam.RolePolicy(`${name}-glue-policy`, { role: role, policy: JSON.stringify(gluePolicy) });
         
-        let logGroup = new aws.cloudwatch.LogGroup("/aws/firehose/parquet-stream", {
+        let logGroup = new aws.cloudwatch.LogGroup(`/aws/firehose/${name}/parquet-stream`, {
             retentionInDays: 7,
         });
         
-        let logStream = new aws.cloudwatch.LogStream("serverless-db-s3-delivery", {
+        let logStream = new aws.cloudwatch.LogStream(`${name}-serverless-db-s3-delivery`, {
             logGroupName: logGroup.name
         });
         
-        const parquetDeliveryStream = new aws.kinesis.FirehoseDeliveryStream("parquet-delivery-stream", {
+        const parquetDeliveryStream = new aws.kinesis.FirehoseDeliveryStream(`${name}-parquet-delivery-stream`, {
             kinesisSourceConfiguration: {
                 kinesisStreamArn: kinesis.arn,
                 roleArn: role.arn

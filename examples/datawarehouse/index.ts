@@ -34,7 +34,9 @@ const columns = [
 ];
 
 const impressionsTableName = "impressions";
-const impressionsTableArgs: StreamingInputTableArgs = {
+const clicksTableName = "clicks";
+
+const genericTableArgs: StreamingInputTableArgs = {
     columns,
     inputStreamShardCount: shards[stage],
     region,
@@ -42,9 +44,14 @@ const impressionsTableArgs: StreamingInputTableArgs = {
 }
 
 const dataWarehouse = new ServerlessDataWarehouse("analytics_dw")
-    .withStreamingInputTable(impressionsTableName, impressionsTableArgs);
+    .withStreamingInputTable(impressionsTableName, genericTableArgs)
+    .withStreamingInputTable(clicksTableName, genericTableArgs);
 
 const impressionsInputStream = dataWarehouse.getInputStream(impressionsTableName);
-export const streamName = impressionsInputStream.name;
+const clicksInputStream = dataWarehouse.getInputStream(clicksTableName);
 
-createEventGenerator("impression", impressionsInputStream.name.get());
+export const impressionInputStream = impressionsInputStream.name;
+export const clickInputStream = clicksInputStream.name;
+
+createEventGenerator("impression", impressionsInputStream.name);
+createEventGenerator("clicks", clicksInputStream.name);

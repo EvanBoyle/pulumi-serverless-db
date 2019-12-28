@@ -1,9 +1,10 @@
+import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 import { CallbackFunction } from "@pulumi/aws/lambda";
 
 // TODO create component resource for this
-export const createEventGenerator = (eventType: string, inputStreamName: string) => {
+export const createEventGenerator = (eventType: string, inputStreamName: pulumi.Output<string>) => {
     let lambdaAssumeRolePolicy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -18,26 +19,26 @@ export const createEventGenerator = (eventType: string, inputStreamName: string)
         ],
     };
 
-    const eventGenRole = new aws.iam.Role("eventGenLambdaRole", {
+    const eventGenRole = new aws.iam.Role(`${eventType}-eventGenLambdaRole`, {
         assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy),
     });
 
-    const eventGenLambdaAccess = new aws.iam.RolePolicyAttachment("event-gen-lambda-access", {
+    const eventGenLambdaAccess = new aws.iam.RolePolicyAttachment(`${eventType}-event-gen-lambda-access`, {
         role: eventGenRole,
         policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess,
     });
 
-    const eventGenKinesisAccess = new aws.iam.RolePolicyAttachment("event-gen-kinesis-access", {
+    const eventGenKinesisAccess = new aws.iam.RolePolicyAttachment(`${eventType}-event-gen-kinesis-access`, {
         role: eventGenRole,
         policyArn: aws.iam.ManagedPolicies.AmazonKinesisFullAccess,
     });
 
 
-    const eventCron = new aws.cloudwatch.EventRule("event-gen-cron", {
+    const eventCron = new aws.cloudwatch.EventRule(`${eventType}-event-gen-cron`, {
         scheduleExpression: "rate(1 minute)",
     });
 
-    eventCron.onEvent("event-generator", new CallbackFunction('event-gen-callback', {
+    eventCron.onEvent(`${eventType}-event-generator`, new CallbackFunction(`${eventType}-event-gen-callback`, {
         role: eventGenRole,
         callback: (event: EventRuleEvent) => {
             const AWS = require("aws-sdk");
@@ -60,7 +61,7 @@ export const createEventGenerator = (eventType: string, inputStreamName: string)
 
             kinesis.putRecords({
                 Records: records,
-                StreamName: inputStreamName
+                StreamName: inputStreamName.get()
             }, (err: any) => {
                 if (err) {
                     console.error(err)
