@@ -10,7 +10,7 @@ export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
     constructor(name: string, args: PartitionRegistrarArgs, opts?: pulumi.ComponentResourceOptions) {
         super("serverless:partitionregistrar", name, opts);
         const { dataWarehouseBucket, athenaResultsBucket, scheduleExpression, table, partitionKey } = args;
-        const location = getS3Location(dataWarehouseBucket);
+        const location = getS3Location(dataWarehouseBucket, table);
 
         const options  = { parent: this }; 
 
@@ -64,7 +64,7 @@ export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
 
                 const client = athena.createClient(clientConfig, awsConfig);
 
-                const query = createPartitionDDLStatement(args.database.name.get(), location.get(), partitionKey,event.time);
+                const query = createPartitionDDLStatement(args.database.name.get(), location.get(), partitionKey, event.time);
 
                 client.execute(query, (err: Error) => {
                     if (err) {

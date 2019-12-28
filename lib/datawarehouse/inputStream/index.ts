@@ -78,6 +78,7 @@ export class InputStream extends pulumi.ComponentResource {
                     logStreamName: logStream.name,
                 },
                 bucketArn: args.destinationBucket.arn,
+                prefix: args.tableName + '/',
                 bufferInterval: 60,// todo make configurable 
                 bufferSize: 64,
                 roleArn: role.arn,

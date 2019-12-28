@@ -30,8 +30,8 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
         const dwArgs = args ? args : {};
 
 
-        const database = dwArgs.database ? dwArgs.database : new aws.glue.CatalogDatabase("severless-db", {
-            name: "serverlessdb" // todo - add randomness here. 
+        const database = dwArgs.database ? dwArgs.database : new aws.glue.CatalogDatabase(name, {
+            name
         }, { parent: this });
 
 
@@ -115,7 +115,7 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
     }
 
     private createTable(name: string, columns: input.glue.CatalogTableStorageDescriptorColumn[], partitionKeys?: input.glue.CatalogTablePartitionKey[]): aws.glue.CatalogTable {
-        const location = getS3Location(this.dataWarehouseBucket);
+        const location = getS3Location(this.dataWarehouseBucket, name);
         return new aws.glue.CatalogTable(name, {
             name: name,
             databaseName: this.database.name,
