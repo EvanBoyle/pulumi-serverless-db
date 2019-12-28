@@ -1,8 +1,9 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { input } from "@pulumi/aws/types";
-import { getS3Location } from "../../utils";
-import { InputStream, InputStreamArgs } from "./inputStream"
+import { getS3Location } from "../utils";
+import { InputStream, InputStreamArgs } from "./inputStream";
+import { HourlyPartitionRegistrar, PartitionRegistrarArgs } from "./partitionRegistrar";
 
 export class ServerlessDataWarehouse extends pulumi.ComponentResource {
 
@@ -75,6 +76,17 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
         const { inputStream } = new InputStream(`inputstream-${name}`, streamArgs, { parent: this});
         this.inputStreams[name] = inputStream;
 
+        const registrarArgs: PartitionRegistrarArgs = {
+            database: this.database,
+            partitionKey,
+            region: args.region,
+            dataWarehouseBucket: this.dataWarehouseBucket,
+            athenaResultsBucket: this.queryResultsBucket,
+            table: name,
+            scheduleExpression: args.scheduleExpression,
+        };
+        const partitionRegistrar = new HourlyPartitionRegistrar(`${name}-partitionregistrar`, registrarArgs, { parent: this });
+
         return this;
     }
 
@@ -137,5 +149,7 @@ export interface TableArgs {
 export interface StreamingInputTableArgs {
     columns: input.glue.CatalogTableStorageDescriptorColumn[]
     inputStreamShardCount: number;
+    region: string;
     partitionKeyName?: string;
+    scheduleExpression?: string; // TODO: we should remove this. It's useful in active development, but users would probably never bother. 
 }
