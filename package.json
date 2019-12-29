@@ -19,6 +19,8 @@
   },
   "scripts": {
     "test": "jest",
+    "test:unit": "jest unit",
+    "test:int": "jest integration",
     "test-watch": "jest --watch"
   }
 }
