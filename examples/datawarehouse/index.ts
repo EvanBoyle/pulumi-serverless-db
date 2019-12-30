@@ -9,7 +9,7 @@ const awsConfig = new pulumi.Config("aws")
 const region = awsConfig.require("region");
 const stage = config.require("stage");
 const shards: { [key: string]: number } = config.requireObject("shards");
-const isDev = config.get("dev");
+const isDev = config.get("dev") === 'true';
 const cronUnit = isDev ? "minute" : "hour";
 const scheduleExpression  = `rate(1 ${cronUnit})`;
 
@@ -43,7 +43,7 @@ const genericTableArgs: StreamingInputTableArgs = {
     scheduleExpression
 }
 
-const dataWarehouse = new ServerlessDataWarehouse("analytics_dw")
+const dataWarehouse = new ServerlessDataWarehouse("analytics_dw", { isDev })
     .withStreamingInputTable(impressionsTableName, genericTableArgs)
     .withStreamingInputTable(clicksTableName, genericTableArgs);
 
