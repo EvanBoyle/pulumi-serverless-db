@@ -4,6 +4,7 @@ import { input } from "@pulumi/aws/types";
 import { getS3Location } from "../utils";
 import { InputStream, InputStreamArgs } from "./inputStream";
 import { HourlyPartitionRegistrar, PartitionRegistrarArgs } from "./partitionRegistrar";
+import { BucketArgs } from "@pulumi/aws/s3";
 
 export class ServerlessDataWarehouse extends pulumi.ComponentResource {
 
@@ -24,8 +25,10 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
     constructor(name: string, args?: DataWarehouseArgs) {
         super("serverless:datawarehouse", name, {});
 
-        const dataWarehouseBucket = new aws.s3.Bucket("datawarehouse-bucket", undefined, { parent: this });
-        const queryResultsBucket = new aws.s3.Bucket("query-results-bucket", undefined, { parent: this });
+        const bucketArgs: BucketArgs | undefined = args?.isDev ? { forceDestroy: true} : undefined;
+
+        const dataWarehouseBucket = new aws.s3.Bucket("datawarehouse-bucket", bucketArgs, { parent: this });
+        const queryResultsBucket = new aws.s3.Bucket("query-results-bucket", bucketArgs, { parent: this });
 
         const dwArgs = args ? args : {};
 
@@ -140,6 +143,7 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
 
 export interface DataWarehouseArgs {
     database?: aws.glue.CatalogDatabase;
+    isDev?: boolean;
 }
 
 export interface TableArgs {
