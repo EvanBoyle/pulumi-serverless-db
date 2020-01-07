@@ -50,7 +50,7 @@ const genericTableArgs: StreamingInputTableArgs = {
 }
 
 // create two tables with kinesis input streams, writing data into hourly partitions in S3. 
-const dataWarehouse = new ServerlessDataWarehouse("analytics_dw_integration", { isDev })
+const dataWarehouse = new ServerlessDataWarehouse("analytics_dw", { isDev })
     .withStreamingInputTable(impressionsTableName, genericTableArgs)
     .withStreamingInputTable(clicksTableName, genericTableArgs);
 
@@ -79,6 +79,10 @@ const aggregateTableColumns = [
     {
         name: "count",
         type: "int"
+    },
+    {
+        name: "time",
+        type: "string"
     }
 ];
 
@@ -102,7 +106,7 @@ const aggregationFunction = async (event: EventRuleEvent) => {
     const impressionRows = await impressionsPromise;
     const clickCount = clickRows.records[0]['_col0'];
     const impressionsCount = impressionRows.records[0]['_col0'];
-    const data = `{ "event_type": "${clicksTableName}", "count": ${clickCount} }\n{ "event_type": "${impressionsTableName}", "count": ${impressionsCount} }`;
+    const data = `{ "event_type": "${clicksTableName}", "count": ${clickCount}, "time": "${partitionKey}" }\n{ "event_type": "${impressionsTableName}", "count": ${impressionsCount}, "time": "${partitionKey}"}`;
     const s3Client = new S3();
     await s3Client.putObject({
         Bucket: dwBucket.get(),
