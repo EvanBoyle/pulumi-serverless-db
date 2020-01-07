@@ -19,7 +19,6 @@ export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
 
         const policyARNsToAttach = [
             aws.iam.ManagedPolicies.AmazonAthenaFullAccess,
-            aws.iam.ManagedPolicies.AWSLambdaFullAccess
         ];
 
 

@@ -39,7 +39,6 @@ export const createEventGenerator = (eventType: string, inputStreamName: pulumi.
         jobFn: eventGenCallback,
         scheduleExpression: "rate(1 minute)",
         policyARNsToAttach: [
-            aws.iam.ManagedPolicies.AWSLambdaFullAccess,
             aws.iam.ManagedPolicies.AmazonKinesisFullAccess
         ]
     };
