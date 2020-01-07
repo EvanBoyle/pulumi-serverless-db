@@ -50,7 +50,7 @@ const genericTableArgs: StreamingInputTableArgs = {
 }
 
 // create two tables with kinesis input streams, writing data into hourly partitions in S3. 
-const dataWarehouse = new ServerlessDataWarehouse("analytics_dw", { isDev })
+const dataWarehouse = new ServerlessDataWarehouse("analytics_dw_integration", { isDev })
     .withStreamingInputTable(impressionsTableName, genericTableArgs)
     .withStreamingInputTable(clicksTableName, genericTableArgs);
 
@@ -126,6 +126,8 @@ const aggregateTableArgs: BatchInputTableArgs = {
 
 dataWarehouse.withBatchInputTable(aggregateTableName, aggregateTableArgs);
 
+// create a static fact table
+
 const factTableName = "facts";
 const factColumns = [
     {
@@ -145,14 +147,13 @@ const factTableArgs: TableArgs = {
 
 dataWarehouse.withTable("facts", factTableArgs);
 
+// Load a static facts file into the facts table.
 const data = `{"thing": "sky", "color": "blue"}\n{ "thing": "seattle sky", "color": "grey"}\n{ "thing": "oranges", "color": "orange"}`;
-const s3Client = new S3();
-dwBucket.apply(async dw => {
-    await s3Client.putObject({
-        Bucket: dw,
-        Key: `${factTableName}/facts.json`,
-        Body: data
-    }).promise();
+
+const bucketObject = new aws.s3.BucketObject("factsFile", {
+    bucket: dataWarehouse.dataWarehouseBucket,
+    content: data,
+    key: `${factTableName}/facts.json`
 });
 
 createEventGenerator("impression", impressionsInputStream.name);
