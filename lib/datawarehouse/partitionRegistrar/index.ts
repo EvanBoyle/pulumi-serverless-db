@@ -4,6 +4,7 @@ import { CallbackFunction } from "@pulumi/aws/lambda";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
 import { getS3Location } from "../../utils";
 import { createPartitionDDLStatement } from "./partitionHelper";
+import { LambdaCronJob, LambdaCronJobArgs } from "../lambdaCron";
 
 export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
 
@@ -12,67 +13,46 @@ export class HourlyPartitionRegistrar extends pulumi.ComponentResource {
         const { dataWarehouseBucket, athenaResultsBucket, scheduleExpression, table, partitionKey } = args;
         const location = getS3Location(dataWarehouseBucket, table);
 
-        const options  = { parent: this }; 
+        const options = { parent: this };
 
         const resultsBucket = athenaResultsBucket.arn.apply(a => `s3://${a.split(":::")[1]}`);
 
-        let lambdaAssumeRolePolicy = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Action": "sts:AssumeRole",
-                    "Principal": {
-                        "Service": "lambda.amazonaws.com",
-                    },
-                    "Effect": "Allow",
-                    "Sid": "",
-                },
-            ],
-        };
+        const policyARNsToAttach = [
+            aws.iam.ManagedPolicies.AmazonAthenaFullAccess,
+            aws.iam.ManagedPolicies.AWSLambdaFullAccess
+        ];
 
-        const partitionRole = new aws.iam.Role(`${table}-partitionLambdaRole`, {
-            assumeRolePolicy: JSON.stringify(lambdaAssumeRolePolicy)
-        }, options);
-
-        const partitionGenLambdaAccess = new aws.iam.RolePolicyAttachment(`${table}-partition-lambda-access`, {
-            role: partitionRole,
-            policyArn: aws.iam.ManagedPolicies.AWSLambdaFullAccess
-        }, options);
-
-        const partitionGenAthenaAccess = new aws.iam.RolePolicyAttachment(`${table}-partition-athena-access`, {
-            role: partitionRole,
-            policyArn: aws.iam.ManagedPolicies.AmazonAthenaFullAccess
-        }, options);
 
         const schedule = scheduleExpression ? scheduleExpression : `rate(1 hour)`;
 
-        const cron = new aws.cloudwatch.EventRule(`${table}-hourly-cron`, {
-            scheduleExpression: schedule
-        }, options);
+        const partitionRegistrarFn = (event: EventRuleEvent) => {
+            // create an athena client here, write the 
+            const athena = require("athena-client");
+            const clientConfig = {
+                bucketUri: resultsBucket.get()
+            };
+            const awsConfig = {
+                region: args.region
+            };
 
-        cron.onEvent(`${table}-partitionregistrar`, new CallbackFunction(`${table}-partition-callback`, {
-            role: partitionRole,
-            callback: (event: EventRuleEvent) => {
-                // create an athena client here, write the 
-                const athena = require("athena-client");
-                const clientConfig = {
-                    bucketUri: resultsBucket.get()
-                };
-                const awsConfig = {
-                    region: args.region
-                };
+            const client = athena.createClient(clientConfig, awsConfig);
 
-                const client = athena.createClient(clientConfig, awsConfig);
+            const query = createPartitionDDLStatement(args.database.name.get(), table, location.get(), partitionKey, event.time);
 
-                const query = createPartitionDDLStatement(args.database.name.get(), table, location.get(), partitionKey, event.time);
+            client.execute(query, (err: Error) => {
+                if (err) {
+                    throw err;
+                }
+            })
+        };
 
-                client.execute(query, (err: Error) => {
-                    if (err) {
-                        throw err;
-                    }
-                })
-            }
-        }), options);
+        const cronArgs: LambdaCronJobArgs = {
+            jobFn: partitionRegistrarFn,
+            scheduleExpression: schedule,
+            policyARNsToAttach
+        }
+
+        const hourlyPartitionRegistrar = new LambdaCronJob(name, cronArgs, options);
     }
 }
 

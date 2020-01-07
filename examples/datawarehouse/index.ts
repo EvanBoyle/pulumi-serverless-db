@@ -1,5 +1,4 @@
 import * as pulumi from "@pulumi/pulumi";
-import * as aws from "@pulumi/aws";
 
 import { ServerlessDataWarehouse, StreamingInputTableArgs } from "../../lib/datawarehouse";
 import { createEventGenerator } from "./eventGenerator";
