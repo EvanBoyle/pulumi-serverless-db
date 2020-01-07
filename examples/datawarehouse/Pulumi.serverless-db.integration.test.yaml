@@ -1,5 +1,0 @@
-config:
-  aws:region: us-west-2
-  pulumi-serverless-db:shards: '{"prod": 8, "gamma": 4, "beta": 1}'
-  pulumi-serverless-db:stage: beta
-  pulumi-serverless-db:dev: true

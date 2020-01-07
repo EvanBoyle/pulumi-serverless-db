@@ -5,11 +5,12 @@
     "@types/jest": "^24.0.23",
     "@types/node": "^8.0.0",
     "jest": "^24.9.0",
+    "jest-circus": "^24.9.0",
     "ts-jest": "^24.1.0",
     "typescript": "^3.7.2"
   },
   "dependencies": {
-    "@pulumi/aws": "^1.0.0",
+    "@pulumi/aws": "^1.17.0",
     "@pulumi/awsx": "^0.18.10",
     "@pulumi/pulumi": "^1.0.0",
     "@types/moment-timezone": "^0.5.12",
