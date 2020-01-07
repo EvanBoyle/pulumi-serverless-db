@@ -40,9 +40,9 @@ export class PulumiRunner {
 
     public async teardown(): Promise<RunnerResult> {
         try {
-            const destoryResult = await this.destroy();
-            if (!destoryResult.success) {
-                return Promise.resolve({ success: false, error: destoryResult.error })
+            const destroyResult = await this.destroy();
+            if (!destroyResult.success) {
+                return Promise.resolve({ success: false, error: destroyResult.error })
             }
             const rmResult = await this.stackRemove();
             if (!rmResult.success) {
