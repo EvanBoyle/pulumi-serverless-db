@@ -4,9 +4,9 @@ import { S3 } from "aws-sdk";
 
 import { ARN } from "@pulumi/aws";
 import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
-import * as moment from "moment-timezone";  
+import * as moment from "moment-timezone";
 
-import { ServerlessDataWarehouse, StreamingInputTableArgs, BatchInputTableArgs } from "../../lib/datawarehouse";
+import { ServerlessDataWarehouse, StreamingInputTableArgs, BatchInputTableArgs, TableArgs } from "../../lib/datawarehouse";
 import { createEventGenerator } from "./eventGenerator";
 
 // app specific config
@@ -80,7 +80,7 @@ const aggregateTableColumns = [
         name: "count",
         type: "int"
     }
-]
+];
 
 const aggregationFunction = async (event: EventRuleEvent) => {
     const athena = require("athena-client");
@@ -125,6 +125,35 @@ const aggregateTableArgs: BatchInputTableArgs = {
 }
 
 dataWarehouse.withBatchInputTable(aggregateTableName, aggregateTableArgs);
+
+const factTableName = "facts";
+const factColumns = [
+    {
+        name: "thing",
+        type: "string"
+    },
+    {
+        name: "color",
+        type: "string"
+    }
+];
+
+const factTableArgs: TableArgs = {
+    columns: factColumns,
+    dataFormat: "JSON"
+};
+
+dataWarehouse.withTable("facts", factTableArgs);
+
+const data = `{"thing": "sky", "color": "blue"}\n{ "thing": "seattle sky", "color": "grey"}\n{ "thing": "oranges", "color": "orange"}`;
+const s3Client = new S3();
+dwBucket.apply(async dw => {
+    await s3Client.putObject({
+        Bucket: dw,
+        Key: `${factTableName}/facts.json`,
+        Body: data
+    }).promise();
+});
 
 createEventGenerator("impression", impressionsInputStream.name);
 createEventGenerator("clicks", clicksInputStream.name);
