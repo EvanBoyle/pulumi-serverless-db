@@ -1,5 +1,5 @@
 {
-  "name": "aws-typescript",
+  "name": "serverlessdb-example",
   "devDependencies": {
     "@babel/preset-typescript": "^7.7.2",
     "@types/jest": "^24.0.23",

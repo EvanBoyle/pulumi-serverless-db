@@ -1,5 +1,6 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+
 import { ServerlessDataWarehouse, StreamingInputTableArgs } from "../../lib/datawarehouse";
 import { createEventGenerator } from "./eventGenerator";
 
@@ -50,8 +51,12 @@ const dataWarehouse = new ServerlessDataWarehouse("analytics_dw", { isDev })
 const impressionsInputStream = dataWarehouse.getInputStream(impressionsTableName);
 const clicksInputStream = dataWarehouse.getInputStream(clicksTableName);
 
-export const impressionInputStream = impressionsInputStream.name;
-export const clickInputStream = clicksInputStream.name;
-
 createEventGenerator("impression", impressionsInputStream.name);
 createEventGenerator("clicks", clicksInputStream.name);
+
+export const impressionInputStream = impressionsInputStream.name;
+export const clickInputStream = clicksInputStream.name;
+export const databaseName = dataWarehouse.database.name;
+export const impressionTableName = dataWarehouse.getTable(impressionsTableName).name;
+export const clickTableName = dataWarehouse.getTable(clicksTableName).name;
+export const athenaResultsBucket = dataWarehouse.queryResultsBucket.bucket;

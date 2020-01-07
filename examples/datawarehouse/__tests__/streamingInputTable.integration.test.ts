@@ -1,68 +1,76 @@
-import { spawn, ChildProcess } from 'child_process';
+import { resolve } from "path";
+import * as athena from "athena-client"
+
+import { PulumiRunner } from "../../../testing/integration";
+
 jest.setTimeout(360000);
 
-beforeAll(done => {
-    const stackCreate = spawn('pulumi', ["stack", "init", "serverless-db.integration.test", '--cwd', './examples/datawarehouse']);
-    const onStackCreateComplete = (exitCode: number) => {
-        // TODO: make stack name unique (append some randomness)
-        // TODO: pass config via --config stringArray
-        // expect(exitCode).toEqual(0);
-        const stackSelect = spawn('pulumi', ["stack", "select", "serverless-db.integration.test", '--cwd', './examples/datawarehouse']);
-        monitorProcAndInitNext(stackSelect, onStackSelectComplete);
+let runner: PulumiRunner;
+const region = "us-west-2";
+
+beforeAll(async () => {
+    const config: { [key: string]: string } = {
+        "aws:region": region,
+        "pulumi-serverless-db:shards": '{"prod": 8, "gamma": 4, "beta": 1}',
+        "pulumi-serverless-db:stage": "beta",
+        "pulumi-serverless-db:dev": "true"
     };
 
-    monitorProcAndInitNext(stackCreate, onStackCreateComplete);
-
-    const onStackSelectComplete = (exitCode: number) => {
-        expect(exitCode).toBe(0);
-        const pulumiUp = spawn('pulumi', ['up', '--non-interactive', '--cwd', './examples/datawarehouse']);
-        monitorProcAndInitNext(pulumiUp, onUpComplete);
-    };
-
-    const onUpComplete = (exitCode: number) => {
-        expect(exitCode).toBe(0)
-        done()
-    };
-
+    const pulumiProjDir = resolve("./examples/datawarehouse");
+    runner = new PulumiRunner(config, pulumiProjDir);
+    const setupResult = await runner.setup();
+    if(!setupResult.success) {
+        throw new Error(`Pulumi setup failed, aborting: ${setupResult.error}`)
+    }
 });
 
-afterAll(done => {
-    const destroy = spawn('pulumi', ['destroy', '--non-interactive', '--cwd', './examples/datawarehouse']);
-    const onDestroyComplete = (exitCode: number) => {
-        expect(exitCode).toBe(0);
-        const stackRm = spawn('pulumi', ["stack", "rm", "serverless-db.integration.test", '--cwd', './examples/datawarehouse', '--yes']);
-        monitorProcAndInitNext(stackRm, onRmComplete);
-    };
-    monitorProcAndInitNext(destroy, onDestroyComplete);
-
-    const onRmComplete = (exitCode: number) => {
-        expect(exitCode).toBe(0);
-        done()
-    };
-
+afterAll(async () => {
+    const teardownResult = await runner.teardown();
+    if(!teardownResult.success) {
+        throw new Error(`Pulumi teardown failed. Test stack has leaked: ${teardownResult.error}`)
+    }
 });
 
-test("WithStreamingInput integrtion test", done => {
-    // TODO: try to read one row from each table, with exponential backoff as it will take a minute or two for data to appear in athena
-    expect(true).toBe(true); // placeholder
-    done()
+test("WithStreamingInput integrtion test", async () => {
+    expect(runner.getStackOutputKeys().length).toBe(6);
+    const db = runner.getStackOutput("databaseName");
+    const clickTable = runner.getStackOutput("clickTableName");
+    const impressionTable = runner.getStackOutput("clickTableName");
+    const bucket = runner.getStackOutput("athenaResultsBucket");
+
+    const clickPromise = verifyRecordsInTable(db, clickTable, bucket);
+    const impressionPromise = verifyRecordsInTable(db, impressionTable, bucket);
+
+    const [clickTableHasRecords, impressionTableHasRecords] = await Promise.all([clickPromise, impressionPromise]);
+
+    expect(clickTableHasRecords).toBe(true);
+    expect(impressionTableHasRecords).toBe(true);
 });
 
-const monitorProcAndInitNext = (proc: ChildProcess, onComplete: (exitCode: number)=>any) => {
-    proc.stdout.setEncoding('utf8');
-    proc.stderr.setEncoding('utf8');
+const verifyRecordsInTable = async (db: string, table: string, bucket: string) => {
+    const bucketUri = `s3://${bucket}`;
+    const clientConfig = {
+        bucketUri
+    };
+    const awsConfig = {
+        region
+    };
+    const athenaClient = athena.createClient(clientConfig, awsConfig);
 
-    proc.stdout.on('data', (chunk) => {
-        console.log(chunk)
-        // data from standard output is here as buffers
-    });
+    let didFindResults = false;
+    const query = `select * from ${db}.${table} limit 10;`
+    let retry = 0;
+    while(retry < 4) {
+        const result = await athenaClient.execute(query).toPromise();
+        if(result.records.length > 0) {
+            didFindResults = true;
+            break;
+        }
+        else {
+            retry++;
+            await new Promise(resolve => setTimeout(resolve, 30000));
+        }
+    }
 
-    proc.stderr.on('data', (chunk) => {
-        console.log(chunk)
-    });
-
-    proc.on('close', (code) => {
-        console.log(`child process exited with code ${code}`);
-        onComplete(code);
-    });
+    return didFindResults
 }
