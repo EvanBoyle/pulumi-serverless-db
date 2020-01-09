@@ -50,7 +50,7 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
             throw new Error(`Duplicate table! Name: ${name}`);
         }
 
-        const dataFormat = args.dataFormat ? args.dataFormat : "parquet";
+        let dataFormat = this.validateFormatAndGetDefault(args.dataFormat);
 
         const table = this.createTable(name, args.columns, dataFormat, args.partitionKeys);
         this.tables[name] = table;
@@ -139,6 +139,25 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
         }
 
         return stream;
+    }
+
+    private validateFormatAndGetDefault(dataFormat: DataFormat | undefined) {
+        let format = dataFormat;
+        const defaultFormat: DataFormat = "parquet";
+
+        switch (format) {
+            case "parquet":
+                break;
+            case "JSON":
+                break;
+            case undefined:
+                format = defaultFormat;
+                break;
+            default:
+                throw new Error(`dataFormat must be one of 'JSON' or 'parquet'. Encountered unknown value: ${dataFormat}`);
+        }
+
+        return format;
     }
 
     // TODO: support formats other than parquet
