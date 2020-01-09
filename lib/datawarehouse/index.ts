@@ -5,6 +5,9 @@ import { getS3Location } from "../utils";
 import { InputStream, InputStreamArgs } from "./inputStream";
 import { HourlyPartitionRegistrar, PartitionRegistrarArgs } from "./partitionRegistrar";
 import { BucketArgs } from "@pulumi/aws/s3";
+import { EventRuleEvent } from "@pulumi/aws/cloudwatch";
+import { ARN } from "@pulumi/aws";
+import { LambdaCronJob, LambdaCronJobArgs } from "./lambdaCron";
 
 export class ServerlessDataWarehouse extends pulumi.ComponentResource {
 
@@ -18,14 +21,13 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
      * TODO: 
      * let's expose some helpful utilities here:
      * GetAthenaQueryIAMPolicy: return the JSON required to query against this thing.
-     * * - support multiple tables - use convention to make this happen. 
      * Add option for encryption
      * 
      */
     constructor(name: string, args?: DataWarehouseArgs) {
         super("serverless:datawarehouse", name, {});
 
-        const bucketArgs: BucketArgs | undefined = args?.isDev ? { forceDestroy: true} : undefined;
+        const bucketArgs: BucketArgs | undefined = args?.isDev ? { forceDestroy: true } : undefined;
 
         const dataWarehouseBucket = new aws.s3.Bucket("datawarehouse-bucket", bucketArgs, { parent: this });
         const queryResultsBucket = new aws.s3.Bucket("query-results-bucket", bucketArgs, { parent: this });
@@ -47,7 +49,10 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
         if (this.tables[name]) {
             throw new Error(`Duplicate table! Name: ${name}`);
         }
-        const table = this.createTable(name, args.columns, args.partitionKeys);
+
+        let dataFormat = this.validateFormatAndGetDefault(args.dataFormat);
+
+        const table = this.createTable(name, args.columns, dataFormat, args.partitionKeys);
         this.tables[name] = table;
 
         return this;
@@ -61,7 +66,7 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
             name: partitionKey,
             type: "string"
         }];
-        
+
         const tableArgs: TableArgs = {
             columns,
             partitionKeys,
@@ -75,8 +80,8 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
             databaseName: this.database.name,
             tableName: name
         };
-        
-        const { inputStream } = new InputStream(`inputstream-${name}`, streamArgs, { parent: this});
+
+        const { inputStream } = new InputStream(`inputstream-${name}`, streamArgs, { parent: this });
         this.inputStreams[name] = inputStream;
 
         const registrarArgs: PartitionRegistrarArgs = {
@@ -93,48 +98,101 @@ export class ServerlessDataWarehouse extends pulumi.ComponentResource {
         return this;
     }
 
-    public withBatchInputTable() { /* TODO */ }
+    public withBatchInputTable(name: string, args: BatchInputTableArgs): ServerlessDataWarehouse {
+        const { columns, partitionKeys, jobFn, scheduleExpression, policyARNsToAttach, dataFormat } = args;
+        const tableArgs: TableArgs = {
+            columns,
+            partitionKeys,
+            dataFormat,
+        };
+
+        this.withTable(name, tableArgs);
+
+        const lambdaCronArgs: LambdaCronJobArgs = {
+            jobFn,
+            scheduleExpression,
+            policyARNsToAttach
+        };
+
+        const lambdaCron = new LambdaCronJob(name, lambdaCronArgs, { parent: this });
+
+        return this;
+    }
 
     public getTable(name: string): aws.glue.CatalogTable {
-        const table = this.tables[name]; 
-        if(!table) {
+        const table = this.tables[name];
+        if (!table) {
             throw new Error(`Table '${name}' does not exist.`);
         }
 
         return table;
     }
-    
+
     public listTables(): string[] {
         return Object.keys(this.tables);
     }
 
     public getInputStream(tableName: string): aws.kinesis.Stream {
-        const stream = this.inputStreams[tableName]; 
-        if(!stream) {
+        const stream = this.inputStreams[tableName];
+        if (!stream) {
             throw new Error(`Input stream for table '${tableName}' does not exist.`);
         }
 
         return stream;
     }
 
+    private validateFormatAndGetDefault(dataFormat: DataFormat | undefined) {
+        let format = dataFormat;
+        const defaultFormat: DataFormat = "parquet";
+
+        switch (format) {
+            case "parquet":
+                break;
+            case "JSON":
+                break;
+            case undefined:
+                format = defaultFormat;
+                break;
+            default:
+                throw new Error(`dataFormat must be one of 'JSON' or 'parquet'. Encountered unknown value: ${dataFormat}`);
+        }
+
+        return format;
+    }
+
     // TODO: support formats other than parquet
-    private createTable(name: string, columns: input.glue.CatalogTableStorageDescriptorColumn[], partitionKeys?: input.glue.CatalogTablePartitionKey[]): aws.glue.CatalogTable {
+    private createTable(name: string, columns: input.glue.CatalogTableStorageDescriptorColumn[], dataFormat: DataFormat, partitionKeys?: input.glue.CatalogTablePartitionKey[]): aws.glue.CatalogTable {
         const location = getS3Location(this.dataWarehouseBucket, name);
+
+        const parquetStorageDescriptor = {
+            location,
+            inputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+            outputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+            serDeInfo: {
+                parameters: { "serialization.format": "1" },
+                name: "ParquetHiveSerDe",
+                serializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+            },
+            columns
+        };
+
+        const jsonStorageDescriptor = {
+            location,
+            inputFormat: "org.apache.hadoop.mapred.TextInputFormat",
+            outputFormat: "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            serDeInfo: {
+                name: "OpenXJSONSerDe",
+                serializationLibrary: "org.openx.data.jsonserde.JsonSerDe"
+            },
+            columns
+        };
+
+        const storageDescriptor = dataFormat === "JSON" ? jsonStorageDescriptor : parquetStorageDescriptor;
         return new aws.glue.CatalogTable(name, {
             name: name,
             databaseName: this.database.name,
             tableType: "EXTERNAL_TABLE",
-            storageDescriptor: {
-                location,
-                inputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
-                outputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
-                serDeInfo: {
-                    parameters: { "serialization.format": "1" },
-                    name: "ParquetHiveSerDe",
-                    serializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
-                },
-                columns
-            },
+            storageDescriptor,
             partitionKeys,
         }, { parent: this });
     }
@@ -146,9 +204,12 @@ export interface DataWarehouseArgs {
     isDev?: boolean;
 }
 
+export type DataFormat = "JSON" | "parquet";
+
 export interface TableArgs {
     columns: input.glue.CatalogTableStorageDescriptorColumn[];
     partitionKeys?: input.glue.CatalogTablePartitionKey[];
+    dataFormat?: DataFormat;
 }
 
 export interface StreamingInputTableArgs {
@@ -157,4 +218,13 @@ export interface StreamingInputTableArgs {
     region: string;
     partitionKeyName?: string;
     scheduleExpression?: string; // TODO: we should remove this. It's useful in active development, but users would probably never bother. 
+}
+
+export interface BatchInputTableArgs {
+    columns: input.glue.CatalogTableStorageDescriptorColumn[];
+    partitionKeys?: input.glue.CatalogTablePartitionKey[];
+    jobFn: (event: EventRuleEvent) => any;
+    scheduleExpression: string;
+    policyARNsToAttach?: pulumi.Input<ARN>[];
+    dataFormat?: DataFormat;
 }
