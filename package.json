@@ -15,7 +15,7 @@
     "@pulumi/pulumi": "^1.0.0",
     "@types/moment-timezone": "^0.5.12",
     "athena-client": "^2.5.1",
-    "aws-sdk": "^2.569.0",
+    "aws-sdk": "^2.814.0",
     "moment-timezone": "^0.5.27"
   },
   "scripts": {
